@@ -1107,6 +1107,7 @@ class Model(six.with_metaclass(ModelBase)):
             errors.extend(cls._check_index_together())
             errors.extend(cls._check_unique_together())
             errors.extend(cls._check_ordering())
+            errors.extend(cls._check_db_constraints())
 
         return errors
 
@@ -1548,6 +1549,42 @@ class Model(six.with_metaclass(ModelBase)):
                             id='models.E019',
                         )
                     )
+
+        return errors
+
+    @classmethod
+    def _check_db_constraints(cls):
+
+        print "in _check_db_constraints"
+
+        from django.db.models.fields.related import RelatedField
+
+        errors = []
+
+        if not cls._meta.managed:
+            return errors
+
+        for db in settings.DATABASES.keys():
+            connection = connections[db]
+
+            if not connection.features.supports_foreign_keys:
+                return errors
+
+            with connection.cursor() as cursor:
+                relations = connection.introspection.get_relations(cursor, cls._meta.db_table)
+
+                for field_id, field_model in enumerate(cls._meta.local_fields):
+                    if isinstance(field_model, RelatedField):
+                        if not field_model.db_constraint:
+                            continue
+                        if field_id not in relations:
+                            errors.append(
+                                checks.Warning(
+                                    "Field %s has no detected database relation for connection %s." % (field_model, db),  # noqa
+                                    hint="Check that the app has migrations if it depends on apps that use them.",
+                                    obj=cls,
+                                )
+                            )
 
         return errors
 

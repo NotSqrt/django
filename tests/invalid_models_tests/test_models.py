@@ -4,7 +4,7 @@ from __future__ import unicode_literals
 import unittest
 
 from django.conf import settings
-from django.core.checks import Error
+from django.core.checks import Error, Warning
 from django.db import models, connections
 from django.test.utils import override_settings
 
@@ -502,6 +502,42 @@ class ShadowingFieldsTests(IsolatedModelsTestCase):
             )
         ]
         self.assertEqual(errors, expected)
+
+
+class DBConstraintModelTests(IsolatedModelsTestCase):
+
+    def test_unmigrated_model(self):
+        """
+        These models are not created in the DB, so obviously foreign key constraints are absent..
+        """
+        class Target(models.Model):
+            pass
+
+        class Model(models.Model):
+            fk = models.ForeignKey(Target)
+
+        errors = Model.check()
+
+        for db in settings.DATABASES.keys():
+            connection = connections[db]
+            if connection.features.supports_foreign_keys:
+                expected = [
+                    Warning(
+                        "Field invalid_models_tests.Model.fk has no detected database relation for connection default.",
+                        hint="Check that the app has migrations if it depends on apps that use them.",
+                        obj=Model,
+                        id=None,
+                    ),
+                    Warning(
+                        "Field invalid_models_tests.Model.fk has no detected database relation for connection other.",
+                        hint="Check that the app has migrations if it depends on apps that use them.",
+                        obj=Model,
+                        id=None,
+                    ),
+                ]
+            else:
+                expected = []
+            self.assertEqual(errors, expected)
 
 
 class OtherModelTests(IsolatedModelsTestCase):
